@@ -8,9 +8,37 @@ import { Play, RotateCcw, Lightbulb, CheckCircle2, PartyPopper, Terminal as Term
 // @ts-ignore
 import { WebR } from 'webr';
 
+const STORAGE_KEY = 'r-zero-start-progress';
+
+// Helper to safely get progress from localStorage
+const getSavedProgress = (): number[] => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.warn('Failed to parse progress from local storage');
+      return [];
+    }
+  }
+  return [];
+};
+
 const App: React.FC = () => {
-  const [currentId, setCurrentId] = useState(1);
-  const [completedIds, setCompletedIds] = useState<number[]>([]);
+  // 1. Initialize completedIds first
+  const [completedIds, setCompletedIds] = useState<number[]>(getSavedProgress);
+
+  // 2. Initialize currentId based on completedIds (Resume Logic)
+  const [currentId, setCurrentId] = useState(() => {
+    const saved = getSavedProgress();
+    if (saved.length > 0) {
+      const maxCompleted = Math.max(...saved);
+      // Resume at the next lesson after the last completed one, capping at curriculum length
+      return Math.min(maxCompleted + 1, CURRICULUM.length);
+    }
+    return 1;
+  });
+
   // Initialize with a placeholder instead of the solution
   const [code, setCode] = useState("# Write your R code here...\n");
   const [logs, setLogs] = useState<TerminalLog[]>([]);
@@ -24,6 +52,11 @@ const App: React.FC = () => {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const currentLesson = CURRICULUM.find(l => l.id === currentId) || CURRICULUM[0];
+
+  // Save progress to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(completedIds));
+  }, [completedIds]);
 
   useEffect(() => {
     const initWebR = async () => {
@@ -84,6 +117,13 @@ const App: React.FC = () => {
         setActiveTab('console');
       }
     }
+  };
+
+  const handleClearProgress = () => {
+    setCompletedIds([]);
+    localStorage.removeItem(STORAGE_KEY);
+    handleLessonSelect(1);
+    setLogs(prev => [...prev, { type: 'system', content: 'Progress has been reset.', timestamp: new Date() }]);
   };
 
   const handleRun = async () => {
@@ -179,6 +219,7 @@ const App: React.FC = () => {
         currentId={currentId}
         completedIds={completedIds}
         onSelect={handleLessonSelect}
+        onClearProgress={handleClearProgress}
       />
 
       <div className="flex-1 flex flex-col relative overflow-hidden">
